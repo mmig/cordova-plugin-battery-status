@@ -41,6 +41,7 @@
         </config-file>
 
         <source-file src="src/android/BatteryListener.java" target-dir="src/org/apache/cordova/batterystatus" />
+        <source-file src="src/android/BatteryStateChangeReceiver.java" target-dir="src/org/apache/cordova/batterystatus" />
     </platform>
 
     <!-- ios -->

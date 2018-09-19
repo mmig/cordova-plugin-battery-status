@@ -19,7 +19,9 @@
 package org.apache.cordova.batterystatus;
 
 import org.apache.cordova.CallbackContext;
+import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
+import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.LOG;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
@@ -38,12 +40,23 @@ public class BatteryListener extends CordovaPlugin {
     BroadcastReceiver receiver;
 
     private CallbackContext batteryCallbackContext = null;
+    private BatteryStateChangeReceiver batteryReceiver = null;
+
+    private static Object msgChannelLock = new Object();
+    private static CallbackContext messageChannel = null;
 
     /**
      * Constructor.
      */
     public BatteryListener() {
         this.receiver = null;
+    }
+
+    @Override
+    public void initialize(CordovaInterface cordova, CordovaWebView webView) {
+        this.batteryReceiver = new BatteryStateChangeReceiver(this);
+        this.batteryReceiver.register(webView.getContext());
+        super.initialize(cordova, webView);
     }
 
     /**
@@ -89,6 +102,29 @@ public class BatteryListener extends CordovaPlugin {
             return true;
         }
 
+        else if (action.equals("msg_channel")) {
+            synchronized ((msgChannelLock)) {
+                if(this.messageChannel != null){
+                    this.messageChannel.sendPluginResult(new PluginResult(PluginResult.Status.NO_RESULT));
+                }
+                this.messageChannel = callbackContext;
+                if(this.batteryReceiver != null){
+                  this.batteryReceiver.sendBatteryStatus(webView.getContext(), true);
+                }
+            }
+            return true;
+        }
+
+        else if (action.equals("get_status")) {
+          if(this.batteryReceiver != null){
+            JSONObject info = this.batteryReceiver.getBatteryStatus(webView.getContext(), false);
+            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, info));
+          } else {
+            callbackContext.error("not initialized yet");
+          }
+          return true;
+        }
+
         return false;
     }
 
@@ -97,6 +133,9 @@ public class BatteryListener extends CordovaPlugin {
      */
     public void onDestroy() {
         removeBatteryListener();
+        if(this.batteryReceiver != null){
+          this.batteryReceiver.unregister(webView.getContext());
+        }
     }
 
     /**
@@ -126,7 +165,7 @@ public class BatteryListener extends CordovaPlugin {
      * @param batteryIntent the current battery information
      * @return a JSONObject containing the battery status information
      */
-    private JSONObject getBatteryInfo(Intent batteryIntent) {
+    private static JSONObject getBatteryInfo(Intent batteryIntent) {
         JSONObject obj = new JSONObject();
         try {
             obj.put("level", batteryIntent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, 0));
@@ -150,13 +189,23 @@ public class BatteryListener extends CordovaPlugin {
     /**
      * Create a new plugin result and send it back to JavaScript
      *
-     * @param connection the network info to set as navigator.connection
+     * @param info the battery info to set as navigator.connection
      */
     private void sendUpdate(JSONObject info, boolean keepCallback) {
         if (this.batteryCallbackContext != null) {
             PluginResult result = new PluginResult(PluginResult.Status.OK, info);
             result.setKeepCallback(keepCallback);
             this.batteryCallbackContext.sendPluginResult(result);
+        }
+    }
+
+    void sendMessage(JSONObject info){
+        synchronized ((msgChannelLock)) {
+            if (messageChannel != null) {
+                PluginResult result = new PluginResult(PluginResult.Status.OK, info);
+                result.setKeepCallback(true);
+                messageChannel.sendPluginResult(result);
+            }
         }
     }
 }

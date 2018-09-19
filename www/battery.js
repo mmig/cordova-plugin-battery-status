@@ -36,7 +36,8 @@ var Battery = function () {
     this.channels = {
         batterystatus: cordova.addWindowEventHandler('batterystatus'),
         batterylow: cordova.addWindowEventHandler('batterylow'),
-        batterycritical: cordova.addWindowEventHandler('batterycritical')
+        batterycritical: cordova.addWindowEventHandler('batterycritical'),
+        batterymode: cordova.addWindowEventHandler('batterymode')
     };
     for (var key in this.channels) {
         this.channels[key].onHasSubscribersChange = Battery.onHasSubscribersChange;
@@ -61,6 +62,13 @@ Battery.onHasSubscribersChange = function () {
     } else if (handlers() === 0) {
         exec(null, null, 'Battery', 'stop', []);
     }
+};
+
+/**
+ * Get current battery status
+ */
+Battery.prototype.getStatus = function (successCallback, errorCallback) {
+    exec(successCallback, errorCallback, 'Battery', 'get_status', []);
 };
 
 /**
@@ -103,6 +111,35 @@ Battery.prototype._status = function (info) {
 Battery.prototype._error = function (e) {
     console.log('Error initializing Battery: ' + e);
 };
+
+/// /////////// back-channel from native implementation: ////////////////////////
+
+/**
+* Handles messages from native implementation.
+*
+* * level: NUMBER
+* * isPlugged: BOOLEAN
+* * isCharging: BOOLEAN
+* * plugType: 'usb' | 'ac' | 'unknown'
+*/
+function onMessageFromNative (modeInfo) {
+    battery._status(modeInfo);
+    cordova.fireWindowEvent('batterymode', modeInfo);
+}
+
+// register back-channel for native plugin when cordova gets available:
+if (cordova.platformId === 'android') {
+
+    var channel = require('cordova/channel');
+
+    channel.createSticky('onBatteryStatusPluginReady');
+    channel.waitForInitialization('onBatteryStatusPluginReady');
+
+    channel.onCordovaReady.subscribe(function () {
+        exec(onMessageFromNative, undefined, 'Battery', 'msg_channel', []);
+        channel.initializationComplete('onBatteryStatusPluginReady');
+    });
+}
 
 var battery = new Battery(); // jshint ignore:line
 
